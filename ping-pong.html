@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <style>
+
+        html, body {
+            margin: 0; padding: 0;
+        }
+
+        div.scores {
+            display: grid;
+
+            width: calc(100% - 20px);
+
+            margin-left: 10px; margin-right: 10px;
+
+            grid-template-columns: repeat(2, auto);
+
+            margin-bottom: 20px;
+        }
+
+        div.scores > p:first-child { /* player */
+            width: auto;
+            display: inline-block;
+            text-align: left;
+        }
+        div.scores > p:last-child { /* computer */
+            width: auto;
+            display: inline-block;
+            text-align: right;
+        }
+
+        canvas {
+            margin: 0; padding:0;
+
+            border: 1px solid black;
+
+            width: 85vw;
+            height: 85vh;
+
+            display: inline-block;
+
+            margin-left:calc(15vw/2);
+        }
+
+    </style>
+
+</head>
+<body>
+    <marquee style="color:red; font-size: 1.2em; font-weight: bold;">⚠️ This only works on a computer.⚠️</marquee>
+
+    <div class="scores">
+        <p id="player-score">Player Score: 0</p>
+        <p id="computer-score">Computer Score: 0</p>
+    </div>
+
+    <canvas></canvas>
+
+    <script>
+        const MAX_SCORE = parseInt(
+            new URLSearchParams(document.location.href).has('max-score') ?
+                new URLSearchParams(document.location.href).get('max-score') :
+                '5'
+        );
+
+        const canvas = document.querySelector('canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const ctx = canvas.getContext('2d');
+
+        const center = {
+            x: window.innerWidth/2,
+            y: window.innerHeight/2
+        };
+
+        const GAMESTATE = {
+            START   : 0,
+            PLAY    : 1,
+            END     : 2
+        };
+
+        let gameState = GAMESTATE.START;
+
+        let scorePlayer     = document.querySelector('p#player-score'),
+            scoreComputer   = document.querySelector('p#computer-score');
+
+        class vec 
+        { 
+            x=0; y=0; 
+            constructor(x,y) { this.x=x; this.y=y; } 
+
+            magnitude()
+            {
+                return Math.hypot(x, y);
+            }
+
+            normalize()
+            {
+                let mag = this.magnitude();
+
+                this.x = this.x * 1/mag;
+                this.y = this.y * 1/mag;
+            }
+
+            get_x_normal()
+            {
+                return new vec(-this.x, this.y);
+            }
+            get_y_normal()
+            {
+                return new vec(this.x, -this.y);
+            }
+
+
+            static add(l, r)
+            {
+                return new vec(l.x + r.x, l.y + r.y);
+            }
+            static scale(v, c)
+            {
+                return new vec(v.x*c, v.y*c);
+            }
+        };
+
+        class bbox
+        {
+            x; y; w; h;
+            speed = new vec(0,0);
+
+            constructor(x,y,w,h)
+            {
+                this.x=x; this.y=y; this.w=w; this.h=h;
+                bboxlist.push(this);
+            }
+
+            translate(dx, dy)
+            {
+                this.x += dx; this.y += dy;
+            }
+
+            set_speed(vec)
+            {
+                this.speed.x = vec.x;
+                this.speed.y = vec.y;
+            }
+
+
+            /** Returns whether there is a collision between this `bbox` and the ones specified. */
+            collision(...bbox)
+            {
+                for(let i=0; i<bbox.length; i++)
+                {
+                    if(this.x > bbox[i].x && this.x < bbox[i].x+bbox[i].w && this.y+this.h > bbox[i].y && this.y < bbox[i].y+bbox[i].h) return i;
+                }
+                return -1;
+            }
+            /** Returns whether there is a collision between this `bbox` and the one specified. */
+            collisionAll()
+            {
+                for(let i=0; i <bboxlist.length; i++)
+                {
+                    if(Math.abs(this.x - bboxlist[i].x) < w && Math.abs(this.y - bboxlist[i].y) < h) return true;
+                }
+                return false;
+            }
+            
+            /** Position is updated using `bbox.speed` after the box has been rendered. */
+            render(color = 'gray')
+            {
+                ctx.fillStyle = color;
+                ctx.fillRect(this.x, this.y, this.w, this.h);
+
+                this.translate(this.speed.x, this.speed.y);
+            }
+        };
+        const bboxlist = [];
+
+        let playerPaddle    = new bbox(30 - 20/2, center.y - 75, 20, 150),
+            computerPaddle  = new bbox(window.innerWidth - 40, center.y - 75, 20, 150);
+
+        let wallTop     = new bbox(0, 0, canvas.width, 1),
+            wallBottom  = new bbox(0, canvas.height - 1, canvas.width, 1);
+
+        let ball = new bbox(center.x - 10, center.y - 10, 20, 20);
+        
+        const rand = (min, max) => Math.floor(Math.random() * (max-min)) + min;
+        ball.set_speed(new vec(-3, 5));
+
+
+        document.addEventListener('keydown', function(e){
+            switch(e.key.toLowerCase())
+            {
+                case 'w': 
+                    playerPaddle.set_speed(new vec(0, -3));
+                    break;
+
+                case 'arrowup': 
+                    playerPaddle.set_speed(new vec(0, -3));
+                    break;
+
+                case 's':
+                    playerPaddle.set_speed(new vec(0, 3));
+                    break;
+
+                case 'arrowdown': 
+                    playerPaddle.set_speed(new vec(0, 3));
+                    break;
+            }
+        })
+        document.addEventListener('keyup', function(e){
+            playerPaddle.set_speed(new vec(0,0))
+        })
+
+        function reset()
+        {
+            playerPaddle.y = computerPaddle.y = center.y - 75;
+            
+            ball.x = center.x - 10; ball.y = center.y - 10;
+            ball.set_speed(new vec(-3, 5));
+        }
+
+        function checkScoreRules()
+        {
+            if(ball.x < 0){ 
+                scoreComputer.innerText = `Computer Score: ${parseInt(scoreComputer.innerText.split(':')[1])+1}`;
+                reset();
+            }else if(ball.x > canvas.width){ 
+                scorePlayer.innerText = `Player Score: ${parseInt(scorePlayer.innerText.split(':')[1])+1}`;
+                reset();
+            }
+        }
+
+        function animate()
+        {
+            if(gameState === GAMESTATE.PLAY)
+            {
+                // render
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                playerPaddle.render();
+                computerPaddle.render();
+
+                ball.render();
+                computerPaddle.set_speed(new vec(0, ball.speed.y));
+
+                if(ball.collision(playerPaddle, computerPaddle) > -1)
+                {
+                    ball.speed.x *= -1;
+                }
+                
+                switch(computerPaddle.collision(wallTop, wallBottom))
+                {
+                    case 0: // wallTop
+                        computerPaddle.translate(0, 5);
+                        break;
+
+                    case 1: // wallBottom
+                        computerPaddle.translate(0, -5);
+                        break;
+                }
+                switch(playerPaddle.collision(wallTop, wallBottom))
+                {
+                    case 0: // wallTop
+                        playerPaddle.translate(0, 5);
+                        break;
+
+                    case 1: // wallBottom
+                        playerPaddle.translate(0, -5);
+                        break;
+                }
+                if(ball.collision(wallTop, wallBottom) > -1)
+                {
+                    ball.speed.y *= -1;
+                }
+
+                checkScoreRules();
+                
+                requestAnimationFrame(animate);
+            }
+        }
+
+        gameState = GAMESTATE.PLAY;
+        reset();
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
